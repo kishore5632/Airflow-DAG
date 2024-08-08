@@ -106,16 +106,19 @@ config:
 
 # Define global sidecar containers
 extraContainers:
-  - name: objinsync
-    image: kishoreel/objinsync-image:latest
+  - name: goofys
+    image: kishoreel/goofys-image:latest
     command:
       - /bin/sh
       - -c
       - |
-        while true; do
-          objinsync --source s3://airflow-dags-stage/dags --destination /opt/airflow/dags --interval 30 || echo "Sync failed, retrying..." >&2
-          sleep 30  # Adjust interval as needed
-        done
+        goofys s3://airflow-dags-stage/dags /opt/airflow/dags
+    securityContext:
+      runAsUser: 0
+      privileged: true
+    volumeMounts:
+      - name: dags
+        mountPath: /opt/airflow/dags
     env:
       - name: AWS_REGION
         value: "us-east-1"
@@ -129,9 +132,6 @@ extraContainers:
           secretKeyRef:
             name: aws-credentials
             key: secret-access-key
-    volumeMounts:
-      - name: dags
-        mountPath: /opt/airflow/dags
 
 # Pod Security Context
 podSecurityContext:
