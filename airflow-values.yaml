@@ -1,0 +1,145 @@
+executor: CeleryKubernetesExecutor
+
+# Redis configuration
+redis:
+  password: my_redis_password
+  resources:
+    requests:
+      cpu: "250m"  # Reduced from "500m"
+      memory: "2Gi"  # Reduced from "4Gi"
+    limits:
+      cpu: "500m"  # Reduced from "1"
+      memory: "4Gi"  # Reduced from "8Gi"
+
+# DAGs configuration - disable Git-sync and use S3 sync
+dags:
+  gitSync:
+    enabled: false
+
+# Define DAGs volume and mount points for all components
+extraVolumes:
+  - name: dags
+    emptyDir: {}
+
+scheduler:
+  extraVolumeMounts:
+    - name: dags
+      mountPath: /opt/airflow/dags
+  resources:
+    requests:
+      cpu: "250m"  # Reduced from "500m"
+      memory: "2Gi"  # Reduced from "4Gi"
+    limits:
+      cpu: "1"  # Reduced from "2"
+      memory: "4Gi"  # Reduced from "8Gi"
+  securityContext:
+    runAsUser: 50000
+    runAsGroup: 50000
+    fsGroup: 50000
+
+webserver:
+  extraVolumeMounts:
+    - name: dags
+      mountPath: /opt/airflow/dags
+  resources:
+    requests:
+      cpu: "250m"  # Reduced from "500m"
+      memory: "2Gi"  # Reduced from "4Gi"
+    limits:
+      cpu: "1"  # Reduced from "2"
+      memory: "4Gi"  # Reduced from "8Gi"
+  securityContext:
+    runAsUser: 50000
+    runAsGroup: 50000
+    fsGroup: 50000
+
+workers:
+  replicas: 1  # Reduced from 2, keeping only one worker
+  extraVolumeMounts:
+    - name: dags
+      mountPath: /opt/airflow/dags
+  resources:
+    requests:
+      cpu: "250m"  # Reduced from "500m"
+      memory: "2Gi"  # Reduced from "4Gi"
+    limits:
+      cpu: "1"  # Reduced from "2"
+      memory: "4Gi"  # Reduced from "8Gi"
+  securityContext:
+    runAsUser: 50000
+    runAsGroup: 50000
+    fsGroup: 50000
+
+triggerer:
+  extraVolumeMounts:
+    - name: dags
+      mountPath: /opt/airflow/dags
+  resources:
+    requests:
+      cpu: "250m"  # Reduced from "500m"
+      memory: "2Gi"  # Reduced from "4Gi"
+    limits:
+      cpu: "1"  # Reduced from "2"
+      memory: "4Gi"  # Reduced from "8Gi"
+  securityContext:
+    runAsUser: 50000
+    runAsGroup: 50000
+    fsGroup: 50000
+
+dagProcessor:
+  extraVolumeMounts:
+    - name: dags
+      mountPath: /opt/airflow/dags
+  securityContext:
+    runAsUser: 50000
+    runAsGroup: 50000
+    fsGroup: 50000
+
+# Custom Celery configurations
+config:
+  celery:
+    worker_concurrency: 8
+    worker_prefetch_multiplier: 1
+    task_acks_late: true
+    task_queue_max_priority: 10
+    broker_transport_options: '{"visibility_timeout": 21600}'
+
+# Define global sidecar containers
+extraContainers:
+  - name: objinsync
+    image: kishoreel/objinsync-image:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          objinsync --source s3://airflow-dags-stage/dags --destination /opt/airflow/dags --interval 30 || echo "Sync failed, retrying..." >&2
+          sleep 30  # Adjust interval as needed
+        done
+    env:
+      - name: AWS_REGION
+        value: "us-east-1"
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: aws-credentials
+            key: access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: aws-credentials
+            key: secret-access-key
+    volumeMounts:
+      - name: dags
+        mountPath: /opt/airflow/dags
+
+# Pod Security Context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 50000
+  runAsGroup: 50000
+  fsGroup: 50000
+
+volumes:
+  - name: dags
+    emptyDir: {}
