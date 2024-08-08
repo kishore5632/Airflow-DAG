@@ -15,12 +15,13 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Goofys
-RUN curl -LO https://github.com/kahing/goofys/releases/latest/download/goofys && \
+RUN curl -LO https://github.com/kahing/goofys/releases/download/v0.24.0/goofys && \
     chmod +x goofys && \
     mv goofys /usr/local/bin/goofys
 
 # Optionally, set up the mount point for Goofys
 RUN mkdir -p /opt/airflow/dags
+
 
 # Set environment variables for AWS credentials
 ENV AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
