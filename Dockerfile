@@ -1,20 +1,31 @@
 # Use a Python slim base image
 FROM python:3.8-slim
 
-# Install curl and file utility
+# Install dependencies and AWS CLI
 RUN apt-get update && \
-    apt-get install -y curl file && \
-    apt-get clean
+    apt-get install -y \
+    curl \
+    unzip \
+    fuse \
+    && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Download the correct pre-built objinsync binary
-RUN curl -L -o /usr/local/bin/objinsync https://github.com/scribd/objinsync/releases/download/v0.1.0/objinsync-linux-amd64 \
-    && chmod +x /usr/local/bin/objinsync
+# Install Goofys
+RUN curl -LO https://github.com/kahing/goofys/releases/latest/download/goofys && \
+    chmod +x goofys && \
+    mv goofys /usr/local/bin/goofys
 
-# Optionally, verify that the binary is executable
-RUN ls -l /usr/local/bin/objinsync
+# Optionally, set up the mount point for Goofys
+RUN mkdir -p /opt/airflow/dags
 
-# Check if the binary is working
-RUN /usr/local/bin/objinsync --version || echo "objinsync failed to run"
+# Set environment variables for AWS credentials
+ENV AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+ENV AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+ENV AWS_REGION=us-east-1
 
-# Optionally, set the entrypoint to objinsync
-ENTRYPOINT ["/usr/local/bin/objinsync"]
+# Set the entrypoint to mount the S3 bucket
+ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/goofys s3://airflow-dags-stage/dags /opt/airflow/dags"]
