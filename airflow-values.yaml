@@ -106,13 +106,13 @@ config:
 
 # Define global sidecar containers
 extraContainers:
-  - name: goofys
-    image: kishoreel/goofys-image:latest
+  - name: s3fs
+    image: kishoreel/s3fs-image:latest
     command:
       - /bin/sh
       - -c
       - |
-        goofys s3://airflow-dags-stage/dags /opt/airflow/dags
+        s3fs airflow-dags-stage /opt/airflow/dags -o passwd_file=/root/.aws/credentials -o allow_other -o url=https://s3.amazonaws.com
     securityContext:
       runAsUser: 0
       privileged: true
