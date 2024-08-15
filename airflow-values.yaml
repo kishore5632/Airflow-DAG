@@ -5,13 +5,13 @@ redis:
   password: my_redis_password
   resources:
     requests:
-      cpu: "250m"  # Reduced from "500m"
-      memory: "2Gi"  # Reduced from "4Gi"
+      cpu: "250m"
+      memory: "2Gi"
     limits:
-      cpu: "500m"  # Reduced from "1"
-      memory: "4Gi"  # Reduced from "8Gi"
+      cpu: "500m"
+      memory: "4Gi"
 
-# DAGs configuration - disable Git-sync and use S3 sync
+# DAGs configuration - disable Git-sync and use S3 sync with Goofys
 dags:
   gitSync:
     enabled: false
@@ -27,11 +27,11 @@ scheduler:
       mountPath: /opt/airflow/dags
   resources:
     requests:
-      cpu: "250m"  # Reduced from "500m"
-      memory: "2Gi"  # Reduced from "4Gi"
+      cpu: "250m"
+      memory: "2Gi"
     limits:
-      cpu: "1"  # Reduced from "2"
-      memory: "4Gi"  # Reduced from "8Gi"
+      cpu: "1"
+      memory: "4Gi"
   securityContext:
     runAsUser: 50000
     runAsGroup: 50000
@@ -43,28 +43,38 @@ webserver:
       mountPath: /opt/airflow/dags
   resources:
     requests:
-      cpu: "250m"  # Reduced from "500m"
-      memory: "2Gi"  # Reduced from "4Gi"
+      cpu: "250m"
+      memory: "2Gi"
     limits:
-      cpu: "1"  # Reduced from "2"
-      memory: "4Gi"  # Reduced from "8Gi"
+      cpu: "1"
+      memory: "4Gi"
   securityContext:
     runAsUser: 50000
     runAsGroup: 50000
     fsGroup: 50000
+  service:
+    type: NodePort  # Changed from LoadBalancer to NodePort for Minikube
+  defaultUser:
+    enabled: true
+    role: Admin
+    username: admin
+    email: admin@example.com
+    firstName: admin
+    lastName: user
+    password: admin
 
 workers:
-  replicas: 1  # Reduced from 2, keeping only one worker
+  replicas: 1
   extraVolumeMounts:
     - name: dags
       mountPath: /opt/airflow/dags
   resources:
     requests:
-      cpu: "250m"  # Reduced from "500m"
-      memory: "2Gi"  # Reduced from "4Gi"
+      cpu: "250m"
+      memory: "2Gi"
     limits:
-      cpu: "1"  # Reduced from "2"
-      memory: "4Gi"  # Reduced from "8Gi"
+      cpu: "1"
+      memory: "4Gi"
   securityContext:
     runAsUser: 50000
     runAsGroup: 50000
@@ -76,11 +86,11 @@ triggerer:
       mountPath: /opt/airflow/dags
   resources:
     requests:
-      cpu: "250m"  # Reduced from "500m"
-      memory: "2Gi"  # Reduced from "4Gi"
+      cpu: "250m"
+      memory: "2Gi"
     limits:
-      cpu: "1"  # Reduced from "2"
-      memory: "4Gi"  # Reduced from "8Gi"
+      cpu: "1"
+      memory: "4Gi"
   securityContext:
     runAsUser: 50000
     runAsGroup: 50000
@@ -106,13 +116,13 @@ config:
 
 # Define global sidecar containers
 extraContainers:
-  - name: s3fs
-    image: kishoreel/s3fs-image:latest
+  - name: goofys
+    image: kishoreel/goofys-image:latest
     command:
       - /bin/sh
       - -c
       - |
-        s3fs airflow-dags-stage /opt/airflow/dags -o passwd_file=/root/.aws/credentials -o allow_other -o url=https://s3.amazonaws.com
+        goofys --debug_s3 airflow-dags-stage /opt/airflow/dags -o allow_other -o url=https://s3.amazonaws.com
     securityContext:
       runAsUser: 0
       privileged: true
@@ -121,7 +131,7 @@ extraContainers:
         mountPath: /opt/airflow/dags
     env:
       - name: AWS_REGION
-        value: "us-east-1"
+        value: "ap-south-1"
       - name: AWS_ACCESS_KEY_ID
         valueFrom:
           secretKeyRef:
@@ -133,6 +143,7 @@ extraContainers:
             name: aws-credentials
             key: secret-access-key
 
+
 # Pod Security Context
 podSecurityContext:
   runAsNonRoot: true
@@ -143,3 +154,10 @@ podSecurityContext:
 volumes:
   - name: dags
     emptyDir: {}
+
+# Add ingress configuration
+ingress:
+  enabled: true
+  web:
+    path: "/"
+  host: "airflow.local"
