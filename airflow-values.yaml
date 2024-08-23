@@ -1,7 +1,9 @@
+# Airflow configuration
 executor: CeleryKubernetesExecutor
 
 # Redis configuration
 redis:
+  enabled: true
   password: my_redis_password
   resources:
     requests:
@@ -11,153 +13,194 @@ redis:
       cpu: "500m"
       memory: "4Gi"
 
-# DAGs configuration - disable Git-sync and use S3 sync with Goofys
+# DAGs configuration - disable Git-sync and use S3 sync with Rclone
 dags:
   gitSync:
     enabled: false
 
-# Define DAGs volume and mount points for all components
-extraVolumes:
+# Common volume definitions
+volumes:
   - name: dags
     emptyDir: {}
+  - name: rclone-config
+    configMap:
+      name: rclone-config
+  - name: log-volume
+    emptyDir: {}
 
+# Worker configuration
+worker:
+  enabled: true
+  replicas: 1
+  extraVolumes:
+    - name: rclone-config
+      configMap:
+        name: rclone-config
+  extraVolumeMounts:
+    - name: dags
+      mountPath: /opt/airflow/dags
+    - name: rclone-config
+      mountPath: /config
+    - name: log-volume
+      mountPath: /var/log
+  extraContainers:
+    - name: rclone-sync
+      image: kishoreel/rclone2-image:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Mount point for rclone config: /config/rclone.conf"
+          while true; do
+            echo "Running rclone sync..."
+            rclone sync s3:airflow-dags-stage /opt/airflow/dags --config /config/rclone.conf --use-server-modtime --transfers 16 --checkers 8 --bwlimit 10M --tpslimit 10 --log-level INFO --log-file /var/log/rclone-sync.log
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags
+          mountPath: /opt/airflow/dags
+        - name: rclone-config
+          mountPath: /config
+        - name: log-volume
+          mountPath: /var/log
+  livenessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - "curl -f http://localhost:8080/health || exit 1"
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Scheduler configuration
 scheduler:
   extraVolumeMounts:
     - name: dags
       mountPath: /opt/airflow/dags
-  resources:
-    requests:
-      cpu: "250m"
-      memory: "2Gi"
-    limits:
-      cpu: "1"
-      memory: "4Gi"
-  securityContext:
-    runAsUser: 50000
-    runAsGroup: 50000
-    fsGroup: 50000
+    - name: rclone-config
+      mountPath: /config
+    - name: log-volume
+      mountPath: /var/log
+  extraContainers:
+    - name: rclone-sync
+      image: kishoreel/rclone2-image:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Mount point for rclone config: /config/rclone.conf"
+          while true; do
+            echo "Running rclone sync..."
+            rclone sync s3:airflow-dags-stage /opt/airflow/dags --config /config/rclone.conf --use-server-modtime --transfers 16 --checkers 8 --bwlimit 10M --tpslimit 10 --log-level INFO --log-file /var/log/rclone-sync.log
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags
+          mountPath: /opt/airflow/dags
+        - name: rclone-config
+          mountPath: /config
+        - name: log-volume
+          mountPath: /var/log
 
+# Webserver configuration
 webserver:
   extraVolumeMounts:
     - name: dags
       mountPath: /opt/airflow/dags
-  resources:
-    requests:
-      cpu: "250m"
-      memory: "2Gi"
-    limits:
-      cpu: "1"
-      memory: "4Gi"
-  securityContext:
-    runAsUser: 50000
-    runAsGroup: 50000
-    fsGroup: 50000
+    - name: rclone-config
+      mountPath: /config
+    - name: log-volume
+      mountPath: /var/log
+  extraContainers:
+    - name: rclone-sync
+      image: kishoreel/rclone2-image:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Mount point for rclone config: /config/rclone.conf"
+          while true; do
+            echo "Running rclone sync..."
+            rclone sync s3:airflow-dags-stage /opt/airflow/dags --config /config/rclone.conf --use-server-modtime --transfers 16 --checkers 8 --bwlimit 10M --tpslimit 10 --log-level INFO --log-file /var/log/rclone-sync.log
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags
+          mountPath: /opt/airflow/dags
+        - name: rclone-config
+          mountPath: /config
+        - name: log-volume
+          mountPath: /var/log
   service:
-    type: NodePort  # Changed from LoadBalancer to NodePort for Minikube
-  defaultUser:
-    enabled: true
-    role: Admin
-    username: admin
-    email: admin@example.com
-    firstName: admin
-    lastName: user
-    password: admin
+    type: ClusterIP  # Changed from LoadBalancer to ClusterIP
+    ports:
+      - name: http
+        port: 80
+        targetPort: 8080
 
-workers:
-  replicas: 1
-  extraVolumeMounts:
-    - name: dags
-      mountPath: /opt/airflow/dags
-  resources:
-    requests:
-      cpu: "250m"
-      memory: "2Gi"
-    limits:
-      cpu: "1"
-      memory: "4Gi"
-  securityContext:
-    runAsUser: 50000
-    runAsGroup: 50000
-    fsGroup: 50000
 
+# Triggerer configuration
 triggerer:
+  extraVolumes:
+    - name: rclone-config
+      configMap:
+        name: rclone-config
   extraVolumeMounts:
     - name: dags
       mountPath: /opt/airflow/dags
-  resources:
-    requests:
-      cpu: "250m"
-      memory: "2Gi"
-    limits:
-      cpu: "1"
-      memory: "4Gi"
-  securityContext:
-    runAsUser: 50000
-    runAsGroup: 50000
-    fsGroup: 50000
+    - name: rclone-config
+      mountPath: /config
+    - name: log-volume
+      mountPath: /var/log
+  extraContainers:
+    - name: rclone-sync
+      image: kishoreel/rclone2-image:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Mount point for rclone config: /config/rclone.conf"
+          while true; do
+            echo "Running rclone sync..."
+            rclone sync s3:airflow-dags-stage /opt/airflow/dags --config /config/rclone.conf --use-server-modtime --transfers 16 --checkers 8 --bwlimit 10M --tpslimit 10 --log-level INFO --log-file /var/log/rclone-sync.log
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags
+          mountPath: /opt/airflow/dags
+        - name: rclone-config
+          mountPath: /config
+        - name: log-volume
+          mountPath: /var/log
 
+# DAG Processor configuration
 dagProcessor:
   extraVolumeMounts:
     - name: dags
       mountPath: /opt/airflow/dags
-  securityContext:
-    runAsUser: 50000
-    runAsGroup: 50000
-    fsGroup: 50000
-
-# Custom Celery configurations
-config:
-  celery:
-    worker_concurrency: 8
-    worker_prefetch_multiplier: 1
-    task_acks_late: true
-    task_queue_max_priority: 10
-    broker_transport_options: '{"visibility_timeout": 21600}'
-
-# Define global sidecar containers
-extraContainers:
-  - name: goofys
-    image: kishoreel/goofys-image:latest
-    command:
-      - /bin/sh
-      - -c
-      - |
-        goofys --debug_s3 airflow-dags-stage /opt/airflow/dags -o allow_other -o url=https://s3.amazonaws.com
-    securityContext:
-      runAsUser: 0
-      privileged: true
-    volumeMounts:
-      - name: dags
-        mountPath: /opt/airflow/dags
-    env:
-      - name: AWS_REGION
-        value: "ap-south-1"
-      - name: AWS_ACCESS_KEY_ID
-        valueFrom:
-          secretKeyRef:
-            name: aws-credentials
-            key: access-key-id
-      - name: AWS_SECRET_ACCESS_KEY
-        valueFrom:
-          secretKeyRef:
-            name: aws-credentials
-            key: secret-access-key
-
-
-# Pod Security Context
-podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 50000
-  runAsGroup: 50000
-  fsGroup: 50000
-
-volumes:
-  - name: dags
-    emptyDir: {}
-
-# Add ingress configuration
-ingress:
-  enabled: true
-  web:
-    path: "/"
-  host: "airflow.local"
+    - name: rclone-config
+      mountPath: /config
+    - name: log-volume
+      mountPath: /var/log
+  extraContainers:
+    - name: rclone-sync
+      image: kishoreel/rclone2-image:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Mount point for rclone config: /config/rclone.conf"
+          while true; do
+            echo "Running rclone sync..."
+            rclone sync s3:airflow-dags-stage /opt/airflow/dags --config /config/rclone.conf --use-server-modtime --transfers 16 --checkers 8 --bwlimit 10M --tpslimit 10 --log-level INFO --log-file /var/log/rclone-sync.log
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags
+          mountPath: /opt/airflow/dags
+        - name: rclone-config
+          mountPath: /config
+        - name: log-volume
+          mountPath: /var/log
